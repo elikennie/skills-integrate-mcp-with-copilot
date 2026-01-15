@@ -3,6 +3,143 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const userIcon = document.getElementById("user-icon");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginMessage = document.getElementById("login-message");
+  const closeModal = document.querySelector(".close");
+  const authRequiredMessage = document.getElementById("auth-required-message");
+
+  // Authentication state
+  let authToken = localStorage.getItem("authToken");
+  let isAuthenticated = false;
+
+  // Update UI based on authentication state
+  function updateAuthUI() {
+    if (isAuthenticated) {
+      userIcon.textContent = "👤 ✓";
+      userIcon.style.backgroundColor = "#4CAF50";
+      authRequiredMessage.classList.add("hidden");
+      signupForm.classList.remove("disabled");
+    } else {
+      userIcon.textContent = "👤";
+      userIcon.style.backgroundColor = "#1a237e";
+      authRequiredMessage.classList.remove("hidden");
+      signupForm.classList.add("disabled");
+    }
+  }
+
+  // Check if user is authenticated on load
+  async function checkAuth() {
+    if (authToken) {
+      try {
+        const response = await fetch("/verify-session", {
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
+        });
+        const result = await response.json();
+        isAuthenticated = result.authenticated;
+        if (!isAuthenticated) {
+          localStorage.removeItem("authToken");
+          authToken = null;
+        }
+      } catch (error) {
+        console.error("Error verifying session:", error);
+        isAuthenticated = false;
+      }
+    }
+    updateAuthUI();
+  }
+
+  // Open login modal
+  userIcon.addEventListener("click", () => {
+    if (isAuthenticated) {
+      // If already logged in, show logout option
+      if (confirm("You are logged in as a teacher. Do you want to logout?")) {
+        logout();
+      }
+    } else {
+      loginModal.classList.remove("hidden");
+    }
+  });
+
+  // Close modal
+  closeModal.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginMessage.classList.add("hidden");
+  });
+
+  // Close modal when clicking outside
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.classList.add("hidden");
+      loginMessage.classList.add("hidden");
+    }
+  });
+
+  // Handle login form submission
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ username, password })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        authToken = result.token;
+        localStorage.setItem("authToken", authToken);
+        isAuthenticated = true;
+        updateAuthUI();
+        loginModal.classList.add("hidden");
+        loginForm.reset();
+        loginMessage.textContent = "Login successful!";
+        loginMessage.className = "success";
+        loginMessage.classList.remove("hidden");
+        setTimeout(() => {
+          loginMessage.classList.add("hidden");
+        }, 3000);
+      } else {
+        loginMessage.textContent = result.detail || "Invalid credentials";
+        loginMessage.className = "error";
+        loginMessage.classList.remove("hidden");
+      }
+    } catch (error) {
+      loginMessage.textContent = "Login failed. Please try again.";
+      loginMessage.className = "error";
+      loginMessage.classList.remove("hidden");
+      console.error("Error logging in:", error);
+    }
+  });
+
+  // Logout function
+  async function logout() {
+    try {
+      await fetch("/logout", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${authToken}`
+        }
+      });
+    } catch (error) {
+      console.error("Error logging out:", error);
+    }
+    
+    localStorage.removeItem("authToken");
+    authToken = null;
+    isAuthenticated = false;
+    updateAuthUI();
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -69,6 +206,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle unregister functionality
   async function handleUnregister(event) {
+    if (!isAuthenticated) {
+      alert("Please login as a teacher to unregister students.");
+      return;
+    }
+
     const button = event.target;
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
@@ -80,6 +222,9 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
         }
       );
 
@@ -114,6 +259,11 @@ document.addEventListener("DOMContentLoaded", () => {
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
+    if (!isAuthenticated) {
+      alert("Please login as a teacher to register students.");
+      return;
+    }
+
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
@@ -124,6 +274,9 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
         }
       );
 
@@ -156,5 +309,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  checkAuth();
   fetchActivities();
 });
